@@ -1,0 +1,56 @@
+{
+  "properties": {
+    "id": {
+      "type": "keyword"
+    },
+    "title": {
+      "type": "text"
+    },
+    "content": {
+      "type": "text"
+    },
+    "thumbnail": {
+      "type": "keyword"
+    },
+    "keyword": {
+      "type": "keyword"
+    },
+    "slug": {
+      "type": "keyword"
+    },
+    "tags": {
+      "type": "keyword"
+    },
+    "communityEngagement": {
+      "type": "nested",
+      "properties": {
+        "likes": {
+          "type": "integer"
+        },
+        "shares": {
+          "type": "integer"
+        },
+        "comments": {
+          "type": "integer"
+        }
+      }
+    },
+    "isDeleted": {
+      "type": "boolean"
+    },
+    "isDraft": {
+      "type": "boolean"
+    },
+    "author_uuid": {
+      "type": "keyword"
+    },
+    "created_date": {
+      "type": "date",
+      "format": "yyyy-MM-dd HH:mm:ss"
+    },
+    "last_modified_date": {
+      "type": "date",
+      "format": "yyyy-MM-dd HH:mm:ss"
+    }
+  }
+}

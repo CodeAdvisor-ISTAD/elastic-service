@@ -1,0 +1,34 @@
+spring.application.name: elastic-service
+
+server:
+  port: 8000
+
+spring:
+
+  kafka:
+    bootstrap-servers:
+      - 167.172.78.79:29093
+      - 167.172.78.79:39093
+      - 167.172.78.79:49093
+    consumer:
+      group-id: content-group # Consumer group ID
+      auto-offset-reset: earliest # Start reading from the earliest offset if no offset is committed
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      ack-mode: manual_immediate
+    security:
+      protocol: SSL
+    ssl:
+      trust-store-location: classpath:kafka.server.truststore.jks
+      trust-store-password: password123
+      key-store-location: classpath:kafka.server.keystore.jks
+      key-store-password: password123
+      key-password: password123
+
+
+logging:
+  level:
+    root: INFO
+    org.springframework.kafka: DEBUG # Enable debug logs for Kafka
+    org.springframework.data.elasticsearch: DEBUG # Enable debug logs for Elasticsearch

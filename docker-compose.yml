@@ -1,0 +1,16 @@
+version: '3.9'
+
+services:
+  media-service:
+    container_name: elastic-service # Set the container name
+    build:
+      context: . # Use the current directory for building
+    ports:
+      - "8000:8000" # Map the application port
+    #    environment:
+    #      SPRING_PROFILES_ACTIVE: prod # Set Spring profile if needed
+    volumes:
+      - logs:/app/logs # Optional: Map logs to a local directory
+
+volumes:
+  logs:
