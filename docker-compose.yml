@@ -1,7 +1,7 @@
 version: '3.9'
 
 services:
-  media-service:
+  elastic-service: # Service name
     container_name: elastic-service # Set the container name
     build:
       context: . # Use the current directory for building
