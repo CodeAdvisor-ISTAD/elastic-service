@@ -1,16 +1,16 @@
 version: '3.9'
 
 services:
-  elastic-service: # Service name
-    container_name: elastic-service # Set the container name
+  elastic-service:
+    container_name: elastic-service
     build:
-      context: . # Use the current directory for building
+      context: .
     ports:
-      - "8000:8000" # Map the application port
-    #    environment:
-    #      SPRING_PROFILES_ACTIVE: prod # Set Spring profile if needed
+      - "8000:8000"
     volumes:
-      - logs:/app/logs # Optional: Map logs to a local directory
+      - elastic-service-logs:/app/logs
+      - ./src/main/resources/kafka.server.keystore.jks:/app/kafka.server.keystore.jks
+      - ./src/main/resources/kafka.server.truststore.jks:/app/kafka.server.truststore.jks
 
 volumes:
-  logs:
+  elastic-service-logs:
