@@ -1,16 +1,16 @@
 version: '3.9'
 
 services:
-  elastic-service:
-    container_name: elastic-service
+  code-advisors-elastic-service:
+    container_name: code-advisors-elastic-service
     build:
       context: .
     ports:
-      - "8000:8000"
+      - "1087:8087"
     volumes:
-      - elastic-service-logs:/app/logs
+      - code-advisors-elastic-service-logs:/app/logs
       - ./src/main/resources/kafka.server.keystore.jks:/app/kafka.server.keystore.jks
       - ./src/main/resources/kafka.server.truststore.jks:/app/kafka.server.truststore.jks
 
 volumes:
-  elastic-service-logs:
+  code-advisors-elastic-service-logs:
