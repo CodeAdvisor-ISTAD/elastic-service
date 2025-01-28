@@ -30,13 +30,14 @@ public class ElasticService {
     @KafkaListener(topics = "content-service.contents", groupId = "content-group")
     public void handleContentChange(String message, Acknowledgment acknowledgment) {
         try {
-            // Log the raw message length and first few characters for debugging
-            log.debug("Received Kafka message length: {}, preview: {}",
-                    message.length(),
-                    message.substring(0, Math.min(100, message.length())));
+            // Log the raw message for debugging
+            log.debug("Received raw Kafka message: {}", message);
 
             // First, handle potential BOM and encoding issues
             message = cleanMessage(message);
+
+            // Log the cleaned message
+            log.debug("Cleaned Kafka message: {}", message);
 
             // Parse the JSON message
             Map<String, Object> messageMap = parseMessage(message);
@@ -53,7 +54,6 @@ public class ElasticService {
 
         } catch (Exception e) {
             log.error("Error processing Kafka message: {}", e.getMessage(), e);
-            // Only acknowledge if it's an unrecoverable error
             if (isUnrecoverableError(e)) {
                 log.warn("Acknowledging message due to unrecoverable error");
                 acknowledgment.acknowledge();
@@ -62,17 +62,41 @@ public class ElasticService {
     }
 
     private String cleanMessage(String message) {
+        if (message == null) {
+            return null;
+        }
+
         // Remove BOM if present
         if (message.startsWith("\uFEFF")) {
             message = message.substring(1);
         }
 
-        // Remove any non-printable characters
+        // Remove leading 'z' character if present
+        if (message.startsWith("z{")) {
+            message = message.substring(1);
+        }
+
+        // Remove any non-printable characters except valid JSON characters
         message = message.replaceAll("[^\\x20-\\x7E]", "");
 
         // Ensure proper UTF-8 encoding
         byte[] bytes = message.getBytes(StandardCharsets.UTF_8);
-        return new String(bytes, StandardCharsets.UTF_8);
+        String cleaned = new String(bytes, StandardCharsets.UTF_8);
+
+        // Verify the message starts with a valid JSON character
+        if (!cleaned.startsWith("{") && !cleaned.startsWith("[")) {
+            // Find the first occurrence of { or [
+            int jsonStart = Math.min(
+                    cleaned.indexOf("{") != -1 ? cleaned.indexOf("{") : Integer.MAX_VALUE,
+                    cleaned.indexOf("[") != -1 ? cleaned.indexOf("[") : Integer.MAX_VALUE
+            );
+
+            if (jsonStart != Integer.MAX_VALUE) {
+                cleaned = cleaned.substring(jsonStart);
+            }
+        }
+
+        return cleaned;
     }
 
     private Map<String, Object> parseMessage(String message) {
@@ -151,7 +175,13 @@ public class ElasticService {
             return;
         }
 
-        String id = ((Map<String, String>) documentKey.get("_id")).get("$oid");
+        Map<String, String> idMap = (Map<String, String>) documentKey.get("_id");
+        if (idMap == null || !idMap.containsKey("$oid")) {
+            log.error("Invalid document key format");
+            return;
+        }
+
+        String id = idMap.get("$oid");
         if (id == null) {
             log.error("Document ID is missing in delete operation");
             return;
@@ -165,8 +195,15 @@ public class ElasticService {
     private Content mapToContent(Map<String, Object> fullDocument) {
         Content content = new Content();
 
+        // Handle MongoDB _id format
+        Map<String, String> idMap = (Map<String, String>) fullDocument.get("_id");
+        if (idMap != null && idMap.containsKey("$oid")) {
+            content.setId(idMap.get("$oid"));
+        } else {
+            content.setId(fullDocument.get("_id").toString());
+        }
+
         // Set basic fields
-        content.setId(getStringValue(fullDocument, "_id"));
         content.setTitle(getStringValue(fullDocument, "title"));
         content.setContent(getStringValue(fullDocument, "content"));
         content.setThumbnail(getStringValue(fullDocument, "thumbnail"));
