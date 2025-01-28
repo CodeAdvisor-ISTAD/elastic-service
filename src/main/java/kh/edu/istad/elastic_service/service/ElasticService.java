@@ -11,12 +11,14 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -28,22 +30,68 @@ public class ElasticService {
     @KafkaListener(topics = "content-service.contents", groupId = "content-group")
     public void handleContentChange(String message, Acknowledgment acknowledgment) {
         try {
-            // Log the raw message for debugging
-            log.info("Received Kafka message: {}", message);
+            // Log the raw message length and first few characters for debugging
+            log.debug("Received Kafka message length: {}, preview: {}",
+                    message.length(),
+                    message.substring(0, Math.min(100, message.length())));
 
-            // Clean the message by removing invalid characters
-            String cleanedMessage = message.replaceAll("[^\\x20-\\x7E]", "");
+            // First, handle potential BOM and encoding issues
+            message = cleanMessage(message);
 
-            // Log the cleaned message for debugging
-            log.info("Cleaned Kafka message: {}", cleanedMessage);
+            // Parse the JSON message
+            Map<String, Object> messageMap = parseMessage(message);
+            if (messageMap == null) {
+                log.error("Failed to parse message as JSON: {}", message);
+                acknowledgment.acknowledge();
+                return;
+            }
 
-            // Deserialize the cleaned Kafka message into a Map
-            Map<String, Object> messageMap = objectMapper.readValue(cleanedMessage, Map.class);
+            // Process the message based on operation type
+            processMessage(messageMap);
 
-            // Extract the operationType from the message
-            String operationType = (String) messageMap.get("operationType");
+            acknowledgment.acknowledge();
 
-            // Handle the operation based on the operationType
+        } catch (Exception e) {
+            log.error("Error processing Kafka message: {}", e.getMessage(), e);
+            // Only acknowledge if it's an unrecoverable error
+            if (isUnrecoverableError(e)) {
+                log.warn("Acknowledging message due to unrecoverable error");
+                acknowledgment.acknowledge();
+            }
+        }
+    }
+
+    private String cleanMessage(String message) {
+        // Remove BOM if present
+        if (message.startsWith("\uFEFF")) {
+            message = message.substring(1);
+        }
+
+        // Remove any non-printable characters
+        message = message.replaceAll("[^\\x20-\\x7E]", "");
+
+        // Ensure proper UTF-8 encoding
+        byte[] bytes = message.getBytes(StandardCharsets.UTF_8);
+        return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    private Map<String, Object> parseMessage(String message) {
+        try {
+            return objectMapper.readValue(message, Map.class);
+        } catch (Exception e) {
+            log.error("JSON parsing error: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private void processMessage(Map<String, Object> messageMap) {
+        String operationType = (String) messageMap.get("operationType");
+        if (operationType == null) {
+            log.error("Operation type is missing in message");
+            return;
+        }
+
+        try {
             switch (operationType) {
                 case "insert":
                     handleInsertOperation(messageMap);
@@ -57,21 +105,19 @@ public class ElasticService {
                 default:
                     log.warn("Unsupported operationType: {}", operationType);
             }
-
-            // Manually acknowledge the message
-            acknowledgment.acknowledge();
-        } catch (JsonParseException e) {
-            log.error("Malformed JSON message: {}", message, e);
-            // Optionally, you can acknowledge the message to skip it
-            acknowledgment.acknowledge();
         } catch (Exception e) {
-            log.error("Error processing Kafka message: {}", e.getMessage(), e);
+            log.error("Error processing {} operation: {}", operationType, e.getMessage(), e);
+            throw e;
         }
     }
 
     private void handleInsertOperation(Map<String, Object> messageMap) {
         // Extract the fullDocument part from the message
         Map<String, Object> fullDocument = (Map<String, Object>) messageMap.get("fullDocument");
+        if (fullDocument == null) {
+            log.error("Full document is missing in insert operation");
+            return;
+        }
 
         // Map the MongoDB document to the Elasticsearch Content model
         Content content = mapToContent(fullDocument);
@@ -84,6 +130,10 @@ public class ElasticService {
     private void handleUpdateOperation(Map<String, Object> messageMap) {
         // Extract the fullDocument part from the message
         Map<String, Object> fullDocument = (Map<String, Object>) messageMap.get("fullDocument");
+        if (fullDocument == null) {
+            log.error("Full document is missing in update operation");
+            return;
+        }
 
         // Map the MongoDB document to the Elasticsearch Content model
         Content content = mapToContent(fullDocument);
@@ -96,7 +146,16 @@ public class ElasticService {
     private void handleDeleteOperation(Map<String, Object> messageMap) {
         // Extract the documentKey part from the message
         Map<String, Object> documentKey = (Map<String, Object>) messageMap.get("documentKey");
+        if (documentKey == null) {
+            log.error("Document key is missing in delete operation");
+            return;
+        }
+
         String id = ((Map<String, String>) documentKey.get("_id")).get("$oid");
+        if (id == null) {
+            log.error("Document ID is missing in delete operation");
+            return;
+        }
 
         // Delete the content from Elasticsearch
         elasticsearchOperations.delete(id, Content.class);
@@ -105,27 +164,32 @@ public class ElasticService {
 
     private Content mapToContent(Map<String, Object> fullDocument) {
         Content content = new Content();
-        content.setId(fullDocument.get("_id").toString());
-        content.setTitle((String) fullDocument.get("title"));
-        content.setContent((String) fullDocument.get("content"));
-        content.setThumbnail((String) fullDocument.get("thumbnail"));
-        content.setSlug((String) fullDocument.get("slug"));
+
+        // Set basic fields
+        content.setId(getStringValue(fullDocument, "_id"));
+        content.setTitle(getStringValue(fullDocument, "title"));
+        content.setContent(getStringValue(fullDocument, "content"));
+        content.setThumbnail(getStringValue(fullDocument, "thumbnail"));
+        content.setSlug(getStringValue(fullDocument, "slug"));
         content.setTags((List<String>) fullDocument.get("tags"));
 
         // Map communityEngagement
         Map<String, Object> engagementMap = (Map<String, Object>) fullDocument.get("communityEngagement");
-        CommunityEngagement engagement = new CommunityEngagement();
-        engagement.setLikeCount(parseNumber(engagementMap.get("likeCount")));
-        engagement.setCommentCount(parseNumber(engagementMap.get("commentCount")));
-        engagement.setReportCount(parseNumber(engagementMap.get("reportCount")));
-        engagement.setFireCount(parseNumber(engagementMap.get("fireCount")));
-        engagement.setLoveCount(parseNumber(engagementMap.get("loveCount")));
-        engagement.setLastUpdated(parseDate(engagementMap.get("lastUpdated")));
-        content.setCommunityEngagement(engagement);
+        if (engagementMap != null) {
+            CommunityEngagement engagement = new CommunityEngagement();
+            engagement.setLikeCount(parseNumber(engagementMap.get("likeCount")));
+            engagement.setCommentCount(parseNumber(engagementMap.get("commentCount")));
+            engagement.setReportCount(parseNumber(engagementMap.get("reportCount")));
+            engagement.setFireCount(parseNumber(engagementMap.get("fireCount")));
+            engagement.setLoveCount(parseNumber(engagementMap.get("loveCount")));
+            engagement.setLastUpdated(parseDate(engagementMap.get("lastUpdated")));
+            content.setCommunityEngagement(engagement);
+        }
 
-        content.setIsDeleted((Boolean) fullDocument.get("isDeleted"));
-        content.setIsDraft((Boolean) fullDocument.get("isDraft"));
-        content.setAuthorUuid((String) fullDocument.get("author_uuid"));
+        // Set boolean fields with default values if null
+        content.setIsDeleted(getBooleanValue(fullDocument, "isDeleted", false));
+        content.setIsDraft(getBooleanValue(fullDocument, "isDraft", false));
+        content.setAuthorUuid(getStringValue(fullDocument, "author_uuid"));
 
         // Map dates
         content.setCreatedDate(parseDate(fullDocument.get("created_date")));
@@ -134,7 +198,27 @@ public class ElasticService {
         return content;
     }
 
+    private String getStringValue(Map<String, Object> map, String key) {
+        Object value = map.get(key);
+        if (value instanceof Map) {
+            Map<String, Object> valueMap = (Map<String, Object>) value;
+            if (valueMap.containsKey("$oid")) {
+                return (String) valueMap.get("$oid");
+            }
+        }
+        return value != null ? value.toString() : null;
+    }
+
+    private Boolean getBooleanValue(Map<String, Object> map, String key, Boolean defaultValue) {
+        Object value = map.get(key);
+        return value != null ? (Boolean) value : defaultValue;
+    }
+
     private Long parseNumber(Object numberObject) {
+        if (numberObject == null) {
+            return 0L;
+        }
+
         if (numberObject instanceof Map) {
             // Handle MongoDB's $numberLong format
             Map<String, String> numberMap = (Map<String, String>) numberObject;
@@ -142,33 +226,56 @@ public class ElasticService {
         } else if (numberObject instanceof Number) {
             // Handle direct numeric values
             return ((Number) numberObject).longValue();
+        } else if (numberObject instanceof String) {
+            // Handle string numbers
+            try {
+                return Long.parseLong((String) numberObject);
+            } catch (NumberFormatException e) {
+                log.warn("Failed to parse number from string: {}", numberObject);
+                return 0L;
+            }
         }
-        return 0L; // Default value if parsing fails
+        return 0L;
     }
 
     private LocalDateTime parseDate(Object dateObject) {
-        if (dateObject instanceof Map) {
-            // Handle MongoDB's $date format
-            Map<String, Object> dateMap = (Map<String, Object>) dateObject;
-            Object dateValue = dateMap.get("$date");
-
-            if (dateValue instanceof Long) {
-                // Handle timestamp in milliseconds
-                long timestamp = (Long) dateValue;
-                return LocalDateTime.ofInstant(Instant.ofEpochMilli(timestamp), ZoneId.systemDefault());
-            } else if (dateValue instanceof String) {
-                // Handle ISO date string
-                String dateString = (String) dateValue;
-                return LocalDateTime.parse(dateString, DateTimeFormatter.ISO_DATE_TIME);
-            }
-        } else if (dateObject instanceof String) {
-            // Handle direct date strings
-            return LocalDateTime.parse((String) dateObject, DateTimeFormatter.ISO_DATE_TIME);
-        } else if (dateObject instanceof Long) {
-            // Handle direct timestamp in milliseconds
-            long timestamp = (Long) dateObject;
-            return LocalDateTime.ofInstant(Instant.ofEpochMilli(timestamp), ZoneId.systemDefault());
+        if (dateObject == null) {
+            return null;
         }
-        return null; // Default value if parsing fails
+
+        try {
+            if (dateObject instanceof Map) {
+                // Handle MongoDB's $date format
+                Map<String, Object> dateMap = (Map<String, Object>) dateObject;
+                Object dateValue = dateMap.get("$date");
+
+                if (dateValue instanceof Long) {
+                    // Handle timestamp in milliseconds
+                    return LocalDateTime.ofInstant(Instant.ofEpochMilli((Long) dateValue),
+                            ZoneId.systemDefault());
+                } else if (dateValue instanceof String) {
+                    // Handle ISO date string
+                    return LocalDateTime.parse((String) dateValue,
+                            DateTimeFormatter.ISO_DATE_TIME);
+                }
+            } else if (dateObject instanceof String) {
+                // Handle direct date strings
+                return LocalDateTime.parse((String) dateObject,
+                        DateTimeFormatter.ISO_DATE_TIME);
+            } else if (dateObject instanceof Long) {
+                // Handle direct timestamp in milliseconds
+                return LocalDateTime.ofInstant(Instant.ofEpochMilli((Long) dateObject),
+                        ZoneId.systemDefault());
+            }
+        } catch (Exception e) {
+            log.error("Error parsing date: {}", dateObject, e);
+        }
+        return null;
+    }
+
+    private boolean isUnrecoverableError(Exception e) {
+        return e instanceof JsonParseException ||
+                e.getMessage().contains("Malformed JSON") ||
+                e.getMessage().contains("Invalid UTF-8");
     }
 }
