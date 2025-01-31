@@ -7,9 +7,9 @@ spring:
 
   kafka:
     bootstrap-servers:
-      - 167.172.78.79:29093
-      - 167.172.78.79:39093
-      - 167.172.78.79:49093
+      - 34.143.151.53:29093
+      - 34.143.151.53:39093
+      - 34.143.151.53:49093
     consumer:
       group-id: content-group # Consumer group ID
       auto-offset-reset: earliest # Start reading from the earliest offset if no offset is committed
