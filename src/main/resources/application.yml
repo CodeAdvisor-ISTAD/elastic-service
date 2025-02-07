@@ -35,8 +35,8 @@ spring:
 #      key-password: password123
 
 
-logging:
-  level:
-    root: INFO
-    org.springframework.kafka: DEBUG # Enable debug logs for Kafka
-    org.springframework.data.elasticsearch: DEBUG # Enable debug logs for Elasticsearch
+# logging:
+#   level:
+#     root: INFO
+#     org.springframework.kafka: DEBUG # Enable debug logs for Kafka
+#     org.springframework.data.elasticsearch: DEBUG # Enable debug logs for Elasticsearch
