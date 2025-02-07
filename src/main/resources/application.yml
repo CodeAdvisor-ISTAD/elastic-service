@@ -4,7 +4,8 @@ server:
   port: 8087
 
 spring:
-
+  elasticsearch:
+    uris: https://elastic.panda.engineer/
   kafka:
     bootstrap-servers:
       - 34.143.151.53:29093
@@ -19,20 +20,20 @@ spring:
       ack-mode: manual_immediate
     security:
       protocol: SSL
-    ssl:
-      trust-store-location: file:/app/kafka.server.truststore.jks
-      trust-store-password: password123
-      key-store-location: file:/app/kafka.server.keystore.jks
-      key-store-password: password123
-      key-password: password123
-#    security:
-#      protocol: SSL
 #    ssl:
-#      trust-store-location: classpath:kafka.server.truststore.jks
+#      trust-store-location: file:/app/kafka.server.truststore.jks
 #      trust-store-password: password123
-#      key-store-location: classpath:kafka.server.keystore.jks
+#      key-store-location: file:/app/kafka.server.keystore.jks
 #      key-store-password: password123
 #      key-password: password123
+#    security:
+#      protocol: SSL
+    ssl:
+      trust-store-location: classpath:kafka.server.truststore.jks
+      trust-store-password: password123
+      key-store-location: classpath:kafka.server.keystore.jks
+      key-store-password: password123
+      key-password: password123
 
 
 # logging:
