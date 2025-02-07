@@ -11,6 +11,12 @@ services:
       - code-advisors-elastic-service-logs:/app/logs
       - ./src/main/resources/kafka.server.keystore.jks:/app/kafka.server.keystore.jks
       - ./src/main/resources/kafka.server.truststore.jks:/app/kafka.server.truststore.jks
-
+    networks:
+      - code-advisors-network
 volumes:
   code-advisors-elastic-service-logs:
+
+
+networks:
+  code-advisors-network:
+    driver: bridge
