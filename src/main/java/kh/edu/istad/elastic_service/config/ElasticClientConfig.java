@@ -13,7 +13,7 @@ public class ElasticClientConfig extends ElasticsearchConfiguration {
     @Override
     public ClientConfiguration clientConfiguration() {
         return ClientConfiguration.builder()
-                .connectedTo("http://202.178.125.77:1200")
+                .connectedTo("https://elastic.panda.engineer")
                 .build();
     }
 }
